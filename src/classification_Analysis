@@ -1,0 +1,118 @@
+#classification analysis of beetle species data
+
+#loading the csv file
+root <- read.csv('C:/Users/jaspr/iCloudDrive/QUARTER 6/DA 410/5/rootstock.data.csv', col.names = c('Number','y1','y2','y3','y4'))
+
+
+#spliting data into groups 
+rs.group <- split(root[,2:5], root$Number)
+
+
+#calculating group means
+rs.means <- sapply(rs.group, function(x) {
+  apply(x, 2, mean)
+}, simplify = 'data.frame')
+
+#calculating the error matrix E and the pooled sample covariance matrix Sp1
+E = matrix(data = 0, nrow = 4, ncol = 4)
+for (i in 1:dim(E)[1]) {
+  for (j in 1:i) {
+    b <- c() 
+    for (k in rs.group) {
+      a <- sum((k[,i] - mean(k[,i])) * (k[,j] - mean(k[,j])))
+      b <- append(b, a)
+    }
+    E[i,j] <- sum(b)
+    E[j,i] <- sum(b)
+  }
+}
+
+N <- dim(root)[1]
+k <- length(unique(root$Number))
+sp1 <- E / (N - k)
+
+
+#Computing Li(y) for each observation
+li.y <- apply(root[,2:5], 1, function(y) {
+  sapply(rs.group, function(x) {
+    y.bar <- as.numeric(apply(x, 2, mean))
+    y.bar %*% solve(sp1) %*% y - .5 * y.bar %*% solve(sp1) %*% y.bar
+  }, simplify = 'data.frame')
+})
+
+#part 9.12.b
+#finding the group that maximized the value of Li(y) for each observation
+root.prediction <- apply(t(li.y), 1, function(x) {
+  which(x==max(x))
+})
+
+root.prediction
+root$Number
+
+table(root$Number, root.prediction, dnn = c('Actual Group','Predicted Group'))
+
+
+#Method 2: 
+library(MASS)
+root.lda <- lda(Number ~ ., data = root)
+lda.pred <- predict(root.lda)$class
+table(root$Number, lda.pred, dnn = c('Actual Group','Predicted Group'))
+
+#Apparent correct classification rate 
+sum(root.prediction == root$Number)
+
+#part 9.12.c
+
+root.group <- split(root[,2:5], root$Number)
+Si <- lapply(root.group, function(x) cov(x))
+
+root.means <- lapply(root.group, function(x) {
+  c(apply(x, 2, mean))
+})
+
+#quadratic discriminant analysis for several groups
+l2i.y <- c() # Initialize the vector to store the classified results
+for (i in 1:dim(root)[1]) {
+  
+  y <- root[i,2:5] # Get the observation vector y
+  l2i <- c()
+  
+  for (j in 1:length(Si)) { # For each group, calculate the QDA function. 
+    y.bar <- unlist(root.means[j])
+    Si.j <- matrix(unlist(Si[j]), 4, byrow = TRUE)
+    l2i <- append(l2i, -.5 * log(det(Si.j)) - .5 * as.numeric(y - y.bar) %*% solve(Si.j) %*% as.numeric(y - y.bar) + log(1/length(Si)))
+  }
+  
+  l2i.y <- append(l2i.y, which.max(l2i)) # Append the group number which maximizes the function
+}
+
+#calculating the consfusion matrix
+table(root$Number, l2i.y, dnn = c('Actual Group','Predicted Group'))
+
+#number of successful classifications 
+1 - sum(l2i.y == root$Number) / dim(root)[1]
+
+#Method 2:
+root.qda <- qda(Number ~ ., data = root)
+root.qda
+
+predict(root.qda)$class
+
+table(root$Number, predict(root.qda)$class, dnn = c('Actual Group','Predicted Group'))
+
+#part 9.12.d
+library(ggvis)
+set.seed(1234)
+
+root.ind <- sample(2, nrow(root), replace=TRUE, prob=c(0.67, 0.33))
+root.training <- root[root.ind==1, 2:5]
+root.test <- root[root.ind==2, 2:5]
+root.trainLabels <- root[root.ind==1, 1]
+root.testLabels <- root[root.ind==2, 1]
+root_pred <- knn(train = root.training, test = root.test, cl = root.trainLabels, k=3)
+rootTestLabels <- data.frame(root.testLabels)
+merge <- data.frame(root_pred, root.testLabels)
+names(merge) <- c("Actual group", "Predicted Group")
+merge
+
+CrossTable(x = root.testLabels, y = root_pred, prop.chisq=FALSE)
